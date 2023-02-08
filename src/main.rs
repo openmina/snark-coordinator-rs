@@ -38,6 +38,9 @@ enum SnarkWorkerJobGetError {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "kind")]
 enum SnarkWorkerStatsPut {
+    Register {
+        time: u64,
+    },
     JobGetInit {
         time: u64,
     },
@@ -72,6 +75,9 @@ enum SnarkWorkerStatsPut {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "kind")]
 enum SnarkWorkerState {
+    Registered {
+        registered_t: u64,
+    },
     JobGetPending {
         job_get_init_t: u64,
     },
@@ -262,11 +268,35 @@ async fn main() {
     let worker_stats_put = warp::path!("worker-stats" / String)
         .and(warp::put())
         .and(warp::filters::body::json())
-        .then(move |pub_key: String, req: SnarkWorkerStatsPut| {
+        .then(move |worker_id: String, req: SnarkWorkerStatsPut| {
             let stats = stats.clone();
             async move {
                 let mut stats = stats.lock().await;
-                match stats.entry(pub_key) {
+
+                match &req {
+                    SnarkWorkerStatsPut::Register { time } => {
+                        for i in 1..4096 {
+                            let id = format!("{worker_id}_{i}");
+                            match stats.entry(id) {
+                                Entry::Vacant(stats) => {
+                                    let registered = SnarkWorkerState::Registered {
+                                        registered_t: *time,
+                                    };
+                                    let id = stats.key().clone();
+                                    stats.insert(std::iter::once(registered).collect());
+                                    return with_status(id, StatusCode::from_u16(200).unwrap());
+                                }
+                                _ => continue,
+                            }
+                        }
+                        let err = format!("too many workers under same worker_id: {worker_id}");
+                        eprintln!("{}", err);
+                        return with_status(err, StatusCode::from_u16(400).unwrap());
+                    }
+                    _ => {}
+                }
+
+                match stats.entry(worker_id) {
                     Entry::Vacant(v) => match req {
                         SnarkWorkerStatsPut::JobGetInit { time } => {
                             let mut val = VecDeque::new();
@@ -289,7 +319,10 @@ async fn main() {
                                 v.push_front(SnarkWorkerState::init(time));
                             }
                             req => {
-                                if !v.front_mut().unwrap().apply(req.clone()) {
+                                if v.front_mut()
+                                    .map(|v| !v.apply(req.clone()))
+                                    .unwrap_or(false)
+                                {
                                     let err = format!(
                                         "unexpected worker_stats/put\nstate: {:?}\nrequest: {:?}",
                                         v, req
@@ -306,18 +339,17 @@ async fn main() {
         });
 
     let stats = worker_stats.clone();
-    let worker_stats_get = warp::path!("worker-stats")
-        .and(warp::get())
-        .then(move || {
-            let stats = stats.clone();
-            async move {
-                let stats = stats.lock().await;
-                with_status(serde_json::to_string(&*stats).unwrap(), StatusCode::from_u16(200).unwrap())
-            }
-        });
+    let worker_stats_get = warp::path!("worker-stats").and(warp::get()).then(move || {
+        let stats = stats.clone();
+        async move {
+            let stats = stats.lock().await;
+            with_status(
+                serde_json::to_string(&*stats).unwrap(),
+                StatusCode::from_u16(200).unwrap(),
+            )
+        }
+    });
 
-    let routes = lock_job_put
-        .or(worker_stats_put)
-        .or(worker_stats_get);
+    let routes = lock_job_put.or(worker_stats_put).or(worker_stats_get);
     warp::serve(routes).run(([0, 0, 0, 0], opts.port)).await;
 }
