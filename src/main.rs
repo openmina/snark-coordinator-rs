@@ -29,6 +29,11 @@ struct LockJobQueryParams {
     timeout: Option<u16>,
 }
 
+#[derive(Serialize, Deserialize, Default)]
+struct WorkerStatsGetParams {
+    workers: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "kind")]
 enum SnarkWorkerJobGetError {
@@ -339,16 +344,30 @@ async fn main() {
         });
 
     let stats = worker_stats.clone();
-    let worker_stats_get = warp::path!("worker-stats").and(warp::get()).then(move || {
-        let stats = stats.clone();
-        async move {
-            let stats = stats.lock().await;
-            with_status(
-                serde_json::to_string(&*stats).unwrap(),
-                StatusCode::from_u16(200).unwrap(),
-            )
-        }
-    });
+    let worker_stats_get = warp::path!("worker-stats")
+        .and(
+            warp::filters::query::query::<WorkerStatsGetParams>()
+                .or(warp::any().map(WorkerStatsGetParams::default))
+                .unify(),
+        )
+        .and(warp::get())
+        .then(move |params: WorkerStatsGetParams| {
+            let stats = stats.clone();
+            async move {
+                let stats = stats.lock().await;
+                with_status(
+                    if let Some(s) = params.workers {
+                        let workers = s.split(",").map(|s| s.to_owned()).collect::<Vec<_>>();
+                        let subset: HashMap<_, _> =
+                            stats.iter().filter(|(k, _)| workers.contains(k)).collect();
+                        serde_json::to_string(&subset).unwrap()
+                    } else {
+                        serde_json::to_string(&*stats).unwrap()
+                    },
+                    StatusCode::from_u16(200).unwrap(),
+                )
+            }
+        });
 
     let routes = lock_job_put.or(worker_stats_put).or(worker_stats_get);
     warp::serve(routes).run(([0, 0, 0, 0], opts.port)).await;
