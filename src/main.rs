@@ -38,6 +38,7 @@ struct WorkerStatsGetParams {
 #[serde(tag = "kind")]
 enum SnarkWorkerJobGetError {
     NoAvailableJob,
+    Other { error: String },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
