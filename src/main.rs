@@ -54,10 +54,16 @@ enum SnarkWorkerStatsPut {
     },
     JobGetError {
         time: u64,
+        job_get_node_received_t: Option<u64>,
+        job_get_node_request_work_init_t: Option<u64>,
+        job_get_node_request_work_success_t: Option<u64>,
         error: SnarkWorkerJobGetError,
     },
     JobGetSuccess {
         time: u64,
+        job_get_node_received_t: Option<u64>,
+        job_get_node_request_work_init_t: Option<u64>,
+        job_get_node_request_work_success_t: Option<u64>,
         ids: String,
     },
     WorkCreateError {
@@ -71,11 +77,17 @@ enum SnarkWorkerStatsPut {
     },
     WorkSubmitError {
         time: u64,
+        work_submit_node_received_t: Option<u64>,
+        work_submit_node_add_work_init_t: Option<u64>,
+        work_submit_node_add_work_success_t: Option<u64>,
         ids: String,
         error: String,
     },
     WorkSubmitSuccess {
         time: u64,
+        work_submit_node_received_t: Option<u64>,
+        work_submit_node_add_work_init_t: Option<u64>,
+        work_submit_node_add_work_success_t: Option<u64>,
         ids: String,
     },
 }
@@ -91,16 +103,25 @@ enum SnarkWorkerState {
     },
     JobGetError {
         job_get_init_t: u64,
+        job_get_node_received_t: Option<u64>,
+        job_get_node_request_work_init_t: Option<u64>,
+        job_get_node_request_work_success_t: Option<u64>,
         job_get_error_t: u64,
         error: SnarkWorkerJobGetError,
     },
     WorkCreatePending {
         job_get_init_t: u64,
+        job_get_node_received_t: Option<u64>,
+        job_get_node_request_work_init_t: Option<u64>,
+        job_get_node_request_work_success_t: Option<u64>,
         job_get_success_t: u64,
         ids: String,
     },
     WorkCreateError {
         job_get_init_t: u64,
+        job_get_node_received_t: Option<u64>,
+        job_get_node_request_work_init_t: Option<u64>,
+        job_get_node_request_work_success_t: Option<u64>,
         job_get_success_t: u64,
         work_create_error_t: u64,
         ids: String,
@@ -108,12 +129,18 @@ enum SnarkWorkerState {
     },
     WorkSubmitPending {
         job_get_init_t: u64,
+        job_get_node_received_t: Option<u64>,
+        job_get_node_request_work_init_t: Option<u64>,
+        job_get_node_request_work_success_t: Option<u64>,
         job_get_success_t: u64,
         work_create_success_t: u64,
         ids: String,
     },
     WorkSubmitError {
         job_get_init_t: u64,
+        job_get_node_received_t: Option<u64>,
+        job_get_node_request_work_init_t: Option<u64>,
+        job_get_node_request_work_success_t: Option<u64>,
         job_get_success_t: u64,
         work_create_success_t: u64,
         work_submit_error_t: u64,
@@ -122,8 +149,14 @@ enum SnarkWorkerState {
     },
     WorkSubmitSuccess {
         job_get_init_t: u64,
+        job_get_node_received_t: Option<u64>,
+        job_get_node_request_work_init_t: Option<u64>,
+        job_get_node_request_work_success_t: Option<u64>,
         job_get_success_t: u64,
         work_create_success_t: u64,
+        work_submit_node_received_t: Option<u64>,
+        work_submit_node_add_work_init_t: Option<u64>,
+        work_submit_node_add_work_success_t: Option<u64>,
         work_submit_success_t: u64,
         ids: String,
     },
@@ -182,13 +215,31 @@ impl SnarkWorkerState {
         match self.clone() {
             Self::JobGetPending { job_get_init_t } => {
                 *self = match v {
-                    SnarkWorkerStatsPut::JobGetError { time, error } => Self::JobGetError {
+                    SnarkWorkerStatsPut::JobGetError {
+                        time,
+                        job_get_node_received_t,
+                        job_get_node_request_work_init_t,
+                        job_get_node_request_work_success_t,
+                        error,
+                    } => Self::JobGetError {
                         job_get_init_t,
+                        job_get_node_received_t,
+                        job_get_node_request_work_init_t,
+                        job_get_node_request_work_success_t,
                         job_get_error_t: time,
                         error,
                     },
-                    SnarkWorkerStatsPut::JobGetSuccess { time, ids } => Self::WorkCreatePending {
+                    SnarkWorkerStatsPut::JobGetSuccess {
+                        time,
+                        job_get_node_received_t,
+                        job_get_node_request_work_init_t,
+                        job_get_node_request_work_success_t,
+                        ids,
+                    } => Self::WorkCreatePending {
                         job_get_init_t,
+                        job_get_node_received_t,
+                        job_get_node_request_work_init_t,
+                        job_get_node_request_work_success_t,
                         job_get_success_t: time,
                         ids,
                     },
@@ -197,6 +248,9 @@ impl SnarkWorkerState {
             }
             Self::WorkCreatePending {
                 job_get_init_t,
+                job_get_node_received_t,
+                job_get_node_request_work_init_t,
+                job_get_node_request_work_success_t,
                 job_get_success_t,
                 ids: expected_ids,
             } => {
@@ -205,6 +259,9 @@ impl SnarkWorkerState {
                         time, error, ids, ..
                     } if ids == expected_ids => Self::WorkCreateError {
                         job_get_init_t,
+                        job_get_node_received_t,
+                        job_get_node_request_work_init_t,
+                        job_get_node_request_work_success_t,
                         job_get_success_t,
                         work_create_error_t: time,
                         ids,
@@ -213,6 +270,9 @@ impl SnarkWorkerState {
                     SnarkWorkerStatsPut::WorkCreateSuccess { time, ids } if ids == expected_ids => {
                         Self::WorkSubmitPending {
                             job_get_init_t,
+                            job_get_node_received_t,
+                            job_get_node_request_work_init_t,
+                            job_get_node_request_work_success_t,
                             job_get_success_t,
                             work_create_success_t: time,
                             ids,
@@ -223,6 +283,9 @@ impl SnarkWorkerState {
             }
             Self::WorkSubmitPending {
                 job_get_init_t,
+                job_get_node_received_t,
+                job_get_node_request_work_init_t,
+                job_get_node_request_work_success_t,
                 job_get_success_t,
                 work_create_success_t,
                 ids: expected_ids,
@@ -232,21 +295,34 @@ impl SnarkWorkerState {
                         time, error, ids, ..
                     } if ids == expected_ids => Self::WorkSubmitError {
                         job_get_init_t,
+                        job_get_node_received_t,
+                        job_get_node_request_work_init_t,
+                        job_get_node_request_work_success_t,
                         job_get_success_t,
                         work_create_success_t,
                         work_submit_error_t: time,
                         ids,
                         error,
                     },
-                    SnarkWorkerStatsPut::WorkSubmitSuccess { time, ids } if ids == expected_ids => {
-                        Self::WorkSubmitSuccess {
-                            job_get_init_t,
-                            job_get_success_t,
-                            work_create_success_t,
-                            work_submit_success_t: time,
-                            ids,
-                        }
-                    }
+                    SnarkWorkerStatsPut::WorkSubmitSuccess {
+                        time,
+                        work_submit_node_received_t,
+                        work_submit_node_add_work_init_t,
+                        work_submit_node_add_work_success_t,
+                        ids,
+                    } if ids == expected_ids => Self::WorkSubmitSuccess {
+                        job_get_init_t,
+                        job_get_node_received_t,
+                        job_get_node_request_work_init_t,
+                        job_get_node_request_work_success_t,
+                        job_get_success_t,
+                        work_create_success_t,
+                        work_submit_node_received_t,
+                        work_submit_node_add_work_init_t,
+                        work_submit_node_add_work_success_t,
+                        work_submit_success_t: time,
+                        ids,
+                    },
                     _ => return false,
                 };
             }
