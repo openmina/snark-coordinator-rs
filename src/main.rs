@@ -389,6 +389,18 @@ async fn main() {
         });
 
     let stats = worker_stats.clone();
+    let workers_get = warp::path!("workers").and(warp::get()).then(move || {
+        let stats = stats.clone();
+        async move {
+            let stats = stats.lock().await;
+            with_status(
+                serde_json::to_string(&stats.keys().collect::<Vec<_>>()).unwrap(),
+                StatusCode::from_u16(200).unwrap(),
+            )
+        }
+    });
+
+    let stats = worker_stats.clone();
     let worker_stats_get = warp::path!("worker-stats")
         .and(
             warp::filters::query::query::<WorkerStatsGetParams>()
@@ -428,6 +440,9 @@ async fn main() {
             }
         });
 
-    let routes = lock_job_put.or(worker_stats_put).or(worker_stats_get);
+    let routes = lock_job_put
+        .or(worker_stats_put)
+        .or(workers_get)
+        .or(worker_stats_get);
     warp::serve(routes).run(([0, 0, 0, 0], opts.port)).await;
 }
