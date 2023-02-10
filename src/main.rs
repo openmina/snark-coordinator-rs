@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use structopt::StructOpt;
 use tokio::sync::Mutex;
 use warp::{hyper::StatusCode, reply::with_status, Filter};
@@ -32,6 +32,8 @@ struct LockJobQueryParams {
 #[derive(Serialize, Deserialize, Default)]
 struct WorkerStatsGetParams {
     workers: Option<String>,
+    from_t: Option<u64>,
+    to_t: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -131,6 +133,48 @@ impl SnarkWorkerState {
     fn init(time: u64) -> Self {
         Self::JobGetPending {
             job_get_init_t: time,
+        }
+    }
+
+    fn start_time(&self) -> u64 {
+        match self {
+            Self::Registered { registered_t } => *registered_t,
+            Self::JobGetPending { job_get_init_t }
+            | Self::JobGetError { job_get_init_t, .. }
+            | Self::WorkCreatePending { job_get_init_t, .. }
+            | Self::WorkCreateError { job_get_init_t, .. }
+            | Self::WorkSubmitPending { job_get_init_t, .. }
+            | Self::WorkSubmitError { job_get_init_t, .. }
+            | Self::WorkSubmitSuccess { job_get_init_t, .. } => *job_get_init_t,
+        }
+    }
+
+    fn end_time(&self) -> u64 {
+        match self {
+            Self::Registered { registered_t } => *registered_t,
+            Self::JobGetPending { job_get_init_t } => *job_get_init_t,
+            Self::JobGetError {
+                job_get_error_t, ..
+            } => *job_get_error_t,
+            Self::WorkCreatePending {
+                job_get_success_t, ..
+            } => *job_get_success_t,
+            Self::WorkCreateError {
+                work_create_error_t,
+                ..
+            } => *work_create_error_t,
+            Self::WorkSubmitPending {
+                work_create_success_t,
+                ..
+            } => *work_create_success_t,
+            Self::WorkSubmitError {
+                work_submit_error_t,
+                ..
+            } => *work_submit_error_t,
+            Self::WorkSubmitSuccess {
+                work_submit_success_t,
+                ..
+            } => *work_submit_success_t,
         }
     }
 
@@ -356,15 +400,29 @@ async fn main() {
             let stats = stats.clone();
             async move {
                 let stats = stats.lock().await;
+                let workers_filter = params
+                    .workers
+                    .map(|s| s.split(",").map(|s| s.to_owned()).collect::<Vec<_>>());
+                let start_t_filter = params.from_t;
+                let end_t_filter = params.to_t;
+
+                let iter = stats
+                    .iter()
+                    .filter(|(k, _)| workers_filter.as_ref().map_or(true, |f| f.contains(k)))
+                    .map(|(k, states)| {
+                        let v = states
+                            .iter()
+                            .skip_while(|v| end_t_filter.map_or(false, |f| f < v.end_time()))
+                            .take_while(|v| start_t_filter.map_or(true, |f| v.start_time() >= f))
+                            .collect::<Vec<_>>();
+                        (k, v)
+                    });
+                let mut buf = Vec::with_capacity(32 * 1024);
+                let mut ser = serde_json::Serializer::new(&mut buf);
+                ser.collect_map(iter).unwrap();
+
                 with_status(
-                    if let Some(s) = params.workers {
-                        let workers = s.split(",").map(|s| s.to_owned()).collect::<Vec<_>>();
-                        let subset: HashMap<_, _> =
-                            stats.iter().filter(|(k, _)| workers.contains(k)).collect();
-                        serde_json::to_string(&subset).unwrap()
-                    } else {
-                        serde_json::to_string(&*stats).unwrap()
-                    },
+                    String::from_utf8(buf).unwrap(),
                     StatusCode::from_u16(200).unwrap(),
                 )
             }
