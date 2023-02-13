@@ -101,6 +101,14 @@ enum SnarkWorkerState {
     JobGetPending {
         job_get_init_t: u64,
     },
+    // TODO(binier): add separate `SnarkWorkerStatsPut` for it.
+    JobUnavailable {
+        job_get_init_t: u64,
+        job_get_node_received_t: Option<u64>,
+        job_get_node_request_work_init_t: Option<u64>,
+        job_get_node_request_work_success_t: Option<u64>,
+        job_get_success_t: u64,
+    },
     JobGetError {
         job_get_init_t: u64,
         job_get_node_received_t: Option<u64>,
@@ -173,6 +181,7 @@ impl SnarkWorkerState {
         match self {
             Self::Registered { registered_t } => *registered_t,
             Self::JobGetPending { job_get_init_t }
+            | Self::JobUnavailable { job_get_init_t, .. }
             | Self::JobGetError { job_get_init_t, .. }
             | Self::WorkCreatePending { job_get_init_t, .. }
             | Self::WorkCreateError { job_get_init_t, .. }
@@ -186,6 +195,9 @@ impl SnarkWorkerState {
         match self {
             Self::Registered { registered_t } => *registered_t,
             Self::JobGetPending { job_get_init_t } => *job_get_init_t,
+            Self::JobUnavailable {
+                job_get_success_t, ..
+            } => *job_get_success_t,
             Self::JobGetError {
                 job_get_error_t, ..
             } => *job_get_error_t,
@@ -221,13 +233,22 @@ impl SnarkWorkerState {
                         job_get_node_request_work_init_t,
                         job_get_node_request_work_success_t,
                         error,
-                    } => Self::JobGetError {
-                        job_get_init_t,
-                        job_get_node_received_t,
-                        job_get_node_request_work_init_t,
-                        job_get_node_request_work_success_t,
-                        job_get_error_t: time,
-                        error,
+                    } => match error {
+                        SnarkWorkerJobGetError::NoAvailableJob => Self::JobUnavailable {
+                            job_get_init_t,
+                            job_get_node_received_t,
+                            job_get_node_request_work_init_t,
+                            job_get_node_request_work_success_t,
+                            job_get_success_t: time,
+                        },
+                        error => Self::JobGetError {
+                            job_get_init_t,
+                            job_get_node_received_t,
+                            job_get_node_request_work_init_t,
+                            job_get_node_request_work_success_t,
+                            job_get_error_t: time,
+                            error,
+                        },
                     },
                     SnarkWorkerStatsPut::JobGetSuccess {
                         time,
