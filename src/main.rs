@@ -15,9 +15,9 @@ struct Opts {
     #[structopt(short, long, default_value = "8080")]
     port: u16,
 
-    #[structopt(long, default_value = "60")]
+    #[structopt(long, default_value = "400")]
     default_timeout: u16,
-    #[structopt(long, default_value = "300")]
+    #[structopt(long, default_value = "3000")]
     max_timeout: u16,
 
     #[structopt(long, default_value = "100")]
